@@ -4,10 +4,11 @@ import os
 import colorsys
 from typing import Optional, List, Tuple, Dict, Any
 
+# optional dependency for building PIL images when requested
 try:
     from PIL import Image
 except Exception:
-    Image = None
+    Image = None  
 
 PCX_HEADER_SIZE = 128
 PCX_PALETTE_SIZE = 768
@@ -15,43 +16,48 @@ PCX_PALETTE_SIGNATURE_SIZE = 1
 PCX_TAIL_SIZE = PCX_PALETTE_SIGNATURE_SIZE + PCX_PALETTE_SIZE  # 769
 
 
-def rgb_to_hex(r: int, g: int, b: int) -> str:
+def rgb_to_hex(r, g, b):
     return f'#{r:02x}{g:02x}{b:02x}'
 
 
-def rgb_to_hsv(r: int, g: int, b: int):
-    r_n, g_n, b_n = r / 255.0, g / 255.0, b / 255.0
-    h, s, v = colorsys.rgb_to_hsv(r_n, g_n, b_n)
+def rgb_to_hsv(r, g, b):
+    r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
+    h, s, v = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
     return (round(h * 360), round(s * 100), round(v * 100))
 
 
 def read_pcx_header(file_path: str) -> Dict[str, Any]:
-    # Read the 128-byte PCX header and return a dictionary (
-    header_data: Dict[str, Any] = {"File Path": file_path, "Error": "Unknown error"}
+    header_data = {"File Path": file_path, "Error": "Unknown error"}
     try:
         with open(file_path, 'rb') as f:
-            hdr = f.read(PCX_HEADER_SIZE)
-            if len(hdr) < PCX_HEADER_SIZE:
+            header_bytes = f.read(PCX_HEADER_SIZE)
+            if len(header_bytes) < PCX_HEADER_SIZE:
                 header_data["Error"] = "File too short to read full 128-byte header."
                 return header_data
 
-            unpacked = struct.unpack('<BBBB 4H 2H 48B B B H H 2H 54B', hdr)
-
+            unpacked = struct.unpack('<BBBB 4H 2H 48B B B H H 2H 54B', header_bytes)
             manufacturer = unpacked[0]
             version = unpacked[1]
             encoding = unpacked[2]
             bits_per_pixel = unpacked[3]
-            xmin, ymin, xmax, ymax = unpacked[4], unpacked[5], unpacked[6], unpacked[7]
-            h_dpi = unpacked[8]; v_dpi = unpacked[9]
+            xmin = unpacked[4]
+            ymin = unpacked[5]
+            xmax = unpacked[6]
+            ymax = unpacked[7]
+            h_dpi = unpacked[8]
+            v_dpi = unpacked[9]
+
             num_color_planes = unpacked[59]
             bytes_per_line = unpacked[60]
             palette_type = unpacked[61]
-            h_screen_size = unpacked[62]; v_screen_size = unpacked[63]
+            h_screen_size = unpacked[62]
+            v_screen_size = unpacked[63]
 
             width = xmax - xmin + 1
             height = ymax - ymin + 1
 
-            is_indexed = (num_color_planes == 1 and bits_per_pixel == 8)
+            is_indexed = num_color_planes == 1 and bits_per_pixel == 8
+
             if is_indexed:
                 palette_info = "256-Color (External)"
             elif bits_per_pixel <= 4 and num_color_planes == 1:
@@ -67,8 +73,6 @@ def read_pcx_header(file_path: str) -> Dict[str, Any]:
                 "Encoding": encoding,
                 "Bits/Pixel": bits_per_pixel,
                 "Dimensions": f"{width} x {height}",
-                "Width": width,
-                "Height": height,
                 "H/V DPI": f"{h_dpi} / {v_dpi}",
                 "Planes": num_color_planes,
                 "Bytes/Line": bytes_per_line,
@@ -77,60 +81,73 @@ def read_pcx_header(file_path: str) -> Dict[str, Any]:
                 "H Screen Size": h_screen_size,
                 "V Screen Size": v_screen_size,
                 "Is Indexed": is_indexed,
+                "Width": width,
+                "Height": height,
             }
+
+            if "Error" in header_data:
+                del header_data["Error"]
+
     except struct.error as e:
-        header_data["Error"] = f"Failed to unpack header: {e}"
+        header_data["Error"] = f"Failed to unpack header structure: {e}"
     except Exception as e:
-        header_data["Error"] = f"Unexpected error reading header: {e}"
+        header_data["Error"] = f"An unexpected error occurred during header read: {e}"
+
     return header_data
 
 
 def read_pcx_256_palette(file_path: str) -> Optional[List[Tuple[int, int, int]]]:
-    # Read 256-color palette at end of file
-    
+   #Returns list of (r,g,b) tuples or None.
+   
+    required_tail = PCX_TAIL_SIZE  # 769
     try:
-        size = os.path.getsize(file_path)
+        file_size = os.path.getsize(file_path)
     except OSError:
         return None
 
-    if size < PCX_HEADER_SIZE + PCX_TAIL_SIZE:
+    if file_size < PCX_HEADER_SIZE + required_tail:
         return None
 
-    # Read last 769 bytes sequentially 
+    tail = b''
     try:
         with open(file_path, 'rb') as f:
-            f.seek(max(0, size - PCX_TAIL_SIZE))
-            tail = f.read(PCX_TAIL_SIZE)
+            chunk_size = 4096
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                if len(tail) + len(chunk) <= required_tail:
+                    tail = tail + chunk
+                else:
+                    combined = tail + chunk
+                    tail = combined[-required_tail:]
+
+        if len(tail) < required_tail:
+            return None
+
+        signature = tail[0]
+        if signature != 12:
+            return None
+
+        palette_bytes = tail[1:1 + PCX_PALETTE_SIZE]
+        if len(palette_bytes) < PCX_PALETTE_SIZE:
+            return None
+
+        rgb_bytes = struct.unpack('<768B', palette_bytes)
+        palette = []
+        for i in range(0, PCX_PALETTE_SIZE, 3):
+            palette.append((rgb_bytes[i], rgb_bytes[i + 1], rgb_bytes[i + 2]))
+
+        return palette
+
     except Exception:
         return None
 
-    if len(tail) < PCX_PALETTE_SIZE + PCX_PALETTE_SIGNATURE_SIZE:
-        return None
-
-    sig = tail[0]
-    palette_block = tail[1:1 + PCX_PALETTE_SIZE]
-
-    # Strict case: signature present
-    if sig == 0x0C:
-        try:
-            bytes_trip = struct.unpack('<768B', palette_block)
-            return [(bytes_trip[i], bytes_trip[i + 1], bytes_trip[i + 2]) for i in range(0, 768, 3)]
-        except struct.error:
-            return None
-
-    # Fallback heuristics: not all zeros and some variation
-    if any(b != 0 for b in palette_block) and len(set(palette_block)) > 3:
-        try:
-            bytes_trip = struct.unpack('<768B', palette_block)
-            return [(bytes_trip[i], bytes_trip[i + 1], bytes_trip[i + 2]) for i in range(0, 768, 3)]
-        except struct.error:
-            return None
-
-    return None
-
 
 def pcx_rle_decode(data: bytes) -> bytes:
-    # Decode PCX RLE data. Returns decoded bytes
+
+    # Decodes PCX RLE-compressed image data.
+
     out = bytearray()
     i = 0
     L = len(data)
@@ -153,89 +170,96 @@ def read_pcx(file_path: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {"header": None, "palette": None, "raw_pixels": None, "image": None}
     header = read_pcx_header(file_path)
     result["header"] = header
-    if "Error" in header:
-        return result
-
     try:
-        size = os.path.getsize(file_path)
+        file_size = os.path.getsize(file_path)
     except OSError:
         return result
 
-    # Determine how many bytes are image data
-    if size < PCX_HEADER_SIZE + PCX_TAIL_SIZE:
+    if "Error" in header:
         return result
 
-    image_data_size = size - PCX_HEADER_SIZE - PCX_TAIL_SIZE
+    # compute how many bytes are image data 
+    if file_size < PCX_HEADER_SIZE + PCX_TAIL_SIZE:
+        return result
+
+    image_data_size = file_size - PCX_HEADER_SIZE - PCX_TAIL_SIZE
     if image_data_size <= 0:
         return result
 
-    # Read compressed image data sequentially 
+   
     try:
         with open(file_path, 'rb') as f:
-            # skip header
-            f.read(PCX_HEADER_SIZE)
+            # consume header bytes
+            _ = f.read(PCX_HEADER_SIZE)
             remaining = image_data_size
-            blocks = []
-            block_size = 8192
+            chunks = []
+            read_block = 8192
             while remaining > 0:
-                to_read = block_size if remaining >= block_size else remaining
+                to_read = read_block if remaining >= read_block else remaining
                 chunk = f.read(to_read)
                 if not chunk:
                     break
-                blocks.append(chunk)
+                chunks.append(chunk)
                 remaining -= len(chunk)
-            compressed = b''.join(blocks)
+
+            compressed = b''.join(chunks)
+            if len(compressed) == 0:
+                return result
+
+            decoded = pcx_rle_decode(compressed)
+            result["raw_pixels"] = decoded
+
+            # try to build PIL image for common cases
+            bits_per_pixel = header.get("Bits/Pixel")
+            planes = header.get("Planes")
+            width = header.get("Width")
+            height = header.get("Height")
+            bytes_per_line = header.get("Bytes/Line")
+
+            # read palette 
+            palette = read_pcx_256_palette(file_path)
+            result["palette"] = palette
+
+            if bits_per_pixel == 8 and planes == 1 and width and height and bytes_per_line:
+                # decoded should contain bytes_per_line * height bytes (per-plane)
+                expected = bytes_per_line * height
+                if len(decoded) < expected:
+                   
+                    return result
+
+                # build pixel indices row by row 
+                pixel_list = []
+                offset = 0
+                for row in range(height):
+                    row_bytes = decoded[offset: offset + bytes_per_line]
+                    if len(row_bytes) < bytes_per_line:
+                    
+                        break
+                    pixel_list.extend(row_bytes[:width])
+                    offset += bytes_per_line
+
+                # create PIL image if PIL is available
+                if Image is not None:
+                    img = Image.new('P', (width, height))
+                    img.putdata(pixel_list)
+                    if palette:
+                        # PIL expects flat list [r,g,b, r,g,b, ...]
+                        pal_flat = []
+                        for (r, g, b) in palette:
+                            pal_flat.extend((r, g, b))
+                        # ensure 768 length
+                        if len(pal_flat) >= 768:
+                            img.putpalette(pal_flat[:768])
+                        else:
+                            # pad with zeros if shorter for safety
+                            img.putpalette(pal_flat + [0] * (768 - len(pal_flat)))
+                    result["image"] = img
+                else:
+                    # PIL not available; user can use raw_pixels and palette
+                    result["image"] = None
+
+            # For other formats (e.g., 24-bit RGB interleaved planes), we return raw decoded bytes
+            return result
+
     except Exception:
         return result
-
-    if not compressed:
-        return result
-
-    decoded = pcx_rle_decode(compressed)
-    result["raw_pixels"] = decoded
-    # try to build palette & image when header indicates 8bpp, 1 plane
-    palette = read_pcx_256_palette(file_path)
-    result["palette"] = palette
-
-    bits = header.get("Bits/Pixel")
-    planes = header.get("Planes")
-    bpl = header.get("Bytes/Line")
-    width = header.get("Width")
-    height = header.get("Height")
-
-    if bits == 8 and planes == 1 and width and height and bpl:
-        expected_len = bpl * height
-        if len(decoded) >= expected_len:
-            # Reconstruct pixel indices row-by-row using first `width` bytes of each scanline
-            pixels = []
-            off = 0
-            for row in range(height):
-                row_bytes = decoded[off: off + bpl]
-                if len(row_bytes) < bpl:
-                    break
-                pixels.extend(row_bytes[:width])
-                off += bpl
-
-            if Image is not None:
-                img = Image.new('P', (width, height))
-                img.putdata(pixels)
-                # attach palette if present
-                if palette:
-                    pal_flat = []
-                    for (r, g, b) in palette:
-                        pal_flat.extend((r, g, b))
-                    if len(pal_flat) < 768:
-                        pal_flat += [0] * (768 - len(pal_flat))
-                    img.putpalette(pal_flat[:768])
-                # Convert to RGB 
-                try:
-                    img_rgb = img.convert("RGB")
-                except Exception:
-                    img_rgb = None
-                result["image"] = img_rgb
-            else:
-                # PIL not present; leave image None but raw_pixels + palette are available
-                result["image"] = None
-
-    # For non-standard formats (multi-plane, 24-bit, etc.) return header + raw_pixels + palette
-    return result
