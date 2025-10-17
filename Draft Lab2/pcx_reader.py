@@ -1,31 +1,33 @@
-
 import struct
 import os
 import colorsys
 from typing import Optional, List, Tuple, Dict, Any
 
-# optional dependency for building PIL images when requested
 try:
     from PIL import Image
 except Exception:
     Image = None  
 
+# PCX format constants
 PCX_HEADER_SIZE = 128
 PCX_PALETTE_SIZE = 768
 PCX_PALETTE_SIGNATURE_SIZE = 1
-PCX_TAIL_SIZE = PCX_PALETTE_SIGNATURE_SIZE + PCX_PALETTE_SIZE  # 769
+PCX_TAIL_SIZE = PCX_PALETTE_SIGNATURE_SIZE + PCX_PALETTE_SIZE  # total = 769
 
 
+# Convert RGB values to hex color string
 def rgb_to_hex(r, g, b):
     return f'#{r:02x}{g:02x}{b:02x}'
 
 
+# Convert RGB to HSV color format
 def rgb_to_hsv(r, g, b):
     r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
     h, s, v = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
     return (round(h * 360), round(s * 100), round(v * 100))
 
 
+# Read and parse the 128-byte PCX file header
 def read_pcx_header(file_path: str) -> Dict[str, Any]:
     header_data = {"File Path": file_path, "Error": "Unknown error"}
     try:
@@ -35,6 +37,7 @@ def read_pcx_header(file_path: str) -> Dict[str, Any]:
                 header_data["Error"] = "File too short to read full 128-byte header."
                 return header_data
 
+            # Unpack PCX header fields using struct
             unpacked = struct.unpack('<BBBB 4H 2H 48B B B H H 2H 54B', header_bytes)
             manufacturer = unpacked[0]
             version = unpacked[1]
@@ -56,8 +59,8 @@ def read_pcx_header(file_path: str) -> Dict[str, Any]:
             width = xmax - xmin + 1
             height = ymax - ymin + 1
 
+            # Determine color format type
             is_indexed = num_color_planes == 1 and bits_per_pixel == 8
-
             if is_indexed:
                 palette_info = "256-Color (External)"
             elif bits_per_pixel <= 4 and num_color_planes == 1:
@@ -67,6 +70,7 @@ def read_pcx_header(file_path: str) -> Dict[str, Any]:
             else:
                 palette_info = "Custom/Unknown"
 
+            # Store header info in dictionary
             header_data = {
                 "Manufacturer": manufacturer,
                 "Version": version,
@@ -96,20 +100,22 @@ def read_pcx_header(file_path: str) -> Dict[str, Any]:
     return header_data
 
 
+# Read 256-color palette from the end of a PCX file (if present)
 def read_pcx_256_palette(file_path: str) -> Optional[List[Tuple[int, int, int]]]:
-   #Returns list of (r,g,b) tuples or None.
-   
-    required_tail = PCX_TAIL_SIZE  # 769
+    # Returns list of (r, g, b) tuples or None.
+    required_tail = PCX_TAIL_SIZE  # 769 bytes at end of file
     try:
         file_size = os.path.getsize(file_path)
     except OSError:
         return None
 
+    # File too short to contain full palette
     if file_size < PCX_HEADER_SIZE + required_tail:
         return None
 
     tail = b''
     try:
+        # Read last 769 bytes of the file
         with open(file_path, 'rb') as f:
             chunk_size = 4096
             while True:
@@ -125,10 +131,12 @@ def read_pcx_256_palette(file_path: str) -> Optional[List[Tuple[int, int, int]]]
         if len(tail) < required_tail:
             return None
 
+        # Palette must begin with 0x0C signature byte
         signature = tail[0]
         if signature != 12:
             return None
 
+    
         palette_bytes = tail[1:1 + PCX_PALETTE_SIZE]
         if len(palette_bytes) < PCX_PALETTE_SIZE:
             return None
@@ -144,15 +152,14 @@ def read_pcx_256_palette(file_path: str) -> Optional[List[Tuple[int, int, int]]]
         return None
 
 
+# Decode PCX RLE-compressed image data into raw pixel bytes
 def pcx_rle_decode(data: bytes) -> bytes:
-
-    # Decodes PCX RLE-compressed image data.
-
     out = bytearray()
     i = 0
     L = len(data)
     while i < L:
         b = data[i]
+        # If top two bits are set, next byte repeats (b & 0x3F) times
         if b >= 0xC0:
             count = b & 0x3F
             i += 1
@@ -161,11 +168,13 @@ def pcx_rle_decode(data: bytes) -> bytes:
             val = data[i]
             out.extend([val] * count)
         else:
+            # Literal value
             out.append(b)
         i += 1
     return bytes(out)
 
 
+# Fully read PCX file (header, palette, image data)
 def read_pcx(file_path: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {"header": None, "palette": None, "raw_pixels": None, "image": None}
     header = read_pcx_header(file_path)
@@ -178,7 +187,7 @@ def read_pcx(file_path: str) -> Dict[str, Any]:
     if "Error" in header:
         return result
 
-    # compute how many bytes are image data 
+    # Compute size of image data (excluding header and palette)
     if file_size < PCX_HEADER_SIZE + PCX_TAIL_SIZE:
         return result
 
@@ -186,14 +195,14 @@ def read_pcx(file_path: str) -> Dict[str, Any]:
     if image_data_size <= 0:
         return result
 
-   
     try:
         with open(file_path, 'rb') as f:
-            # consume header bytes
+            # Skip 128-byte header
             _ = f.read(PCX_HEADER_SIZE)
             remaining = image_data_size
             chunks = []
             read_block = 8192
+            # Read compressed image data in chunks
             while remaining > 0:
                 to_read = read_block if remaining >= read_block else remaining
                 chunk = f.read(to_read)
@@ -206,59 +215,57 @@ def read_pcx(file_path: str) -> Dict[str, Any]:
             if len(compressed) == 0:
                 return result
 
+            # Decode RLE-compressed data
             decoded = pcx_rle_decode(compressed)
             result["raw_pixels"] = decoded
 
-            # try to build PIL image for common cases
+            # Extract header details for image reconstruction
             bits_per_pixel = header.get("Bits/Pixel")
             planes = header.get("Planes")
             width = header.get("Width")
             height = header.get("Height")
             bytes_per_line = header.get("Bytes/Line")
 
-            # read palette 
+            # Read external 256-color palette (if any)
             palette = read_pcx_256_palette(file_path)
             result["palette"] = palette
 
+            # If indexed 8-bit image
             if bits_per_pixel == 8 and planes == 1 and width and height and bytes_per_line:
-                # decoded should contain bytes_per_line * height bytes (per-plane)
                 expected = bytes_per_line * height
                 if len(decoded) < expected:
-                   
                     return result
 
-                # build pixel indices row by row 
+                # Build pixel data line by line
                 pixel_list = []
                 offset = 0
                 for row in range(height):
                     row_bytes = decoded[offset: offset + bytes_per_line]
                     if len(row_bytes) < bytes_per_line:
-                    
                         break
                     pixel_list.extend(row_bytes[:width])
                     offset += bytes_per_line
 
-                # create PIL image if PIL is available
+                # Create PIL image (if Pillow is available)
                 if Image is not None:
                     img = Image.new('P', (width, height))
                     img.putdata(pixel_list)
                     if palette:
-                        # PIL expects flat list [r,g,b, r,g,b, ...]
+                        # Flatten palette for Pillow
                         pal_flat = []
                         for (r, g, b) in palette:
                             pal_flat.extend((r, g, b))
-                        # ensure 768 length
+                        # Ensure length is exactly 768
                         if len(pal_flat) >= 768:
                             img.putpalette(pal_flat[:768])
                         else:
-                            # pad with zeros if shorter for safety
                             img.putpalette(pal_flat + [0] * (768 - len(pal_flat)))
                     result["image"] = img
                 else:
-                    # PIL not available; user can use raw_pixels and palette
+                    # Fallback: no Pillow installed
                     result["image"] = None
 
-            # For other formats (e.g., 24-bit RGB interleaved planes), we return raw decoded bytes
+            # For other image types (e.g., 24-bit), return raw data only
             return result
 
     except Exception:
