@@ -7,7 +7,7 @@ from model import ImageState
 from utils import rgb_to_hex, rgb_to_hsv_str
 from ui_components import Toolbar, SidePanel, ImageCanvas
 from pcx_reader import read_pcx_header, read_pcx_256_palette  # New import
-
+from channel_panel import ChannelPanel
 try:
     RESAMPLE = Image.Resampling.LANCZOS
 except AttributeError:
@@ -33,23 +33,35 @@ class ImageApp(tk.Tk):
         except Exception:
             pass
 
-        # Layout
+
+        # --- Layout ---
         toolbar = Toolbar(self, self)
         toolbar.pack(side="top", fill="x", padx=8, pady=6)
         self.toolbar = toolbar
 
-        main = ttk.Frame(self)
-        main.pack(side="top", fill="both", expand=True)
-        left = ttk.Frame(main)
-        left.grid(row=0, column=0, sticky="nsew")
-        side = SidePanel(main, self)
-        side.grid(row=0, column=1, sticky="ns")
-        main.rowconfigure(0, weight=1)
-        main.columnconfigure(0, weight=1)
+        # Create horizontal frame for image + sidebar
+        hframe = ttk.Frame(self)
+        hframe.pack(side="top", fill="both", expand=True)
 
-        self.side_panel = side
-        self.canvas = ImageCanvas(left, self)
+        # --- Left area: image + bottom histograms ---
+        vsplit = tk.PanedWindow(hframe, orient="vertical")
+        vsplit.pack(side="left", fill="both", expand=True)
 
+        # Top image area
+        top_area = ttk.Frame(vsplit)
+        self.canvas = ImageCanvas(top_area, self)
+        vsplit.add(top_area, minsize=200)
+
+        # Bottom histogram/channel panel
+        self.channel_panel = ChannelPanel(vsplit, self)
+        vsplit.add(self.channel_panel, minsize=200)
+
+        # --- Right side panel (metadata, preview, etc.) ---
+        self.side_panel = SidePanel(hframe, self)
+        self.side_panel.pack(side="right", fill="y", padx=(4, 8), pady=8)
+
+
+        # --- Status bar ---
         self.status = ttk.Label(self, text="Load an image to get started.")
         self.status.pack(side="bottom", fill="x")
 
@@ -153,6 +165,9 @@ class ImageApp(tk.Tk):
         self.update_preview()
         self.update_meta()  # Updates general metadata (size, mode, format, EXIF)
         self.redraw()
+
+        self.channel_panel.show_channels(img)
+
         self.status.config(text=f"Loaded: {path}")
 
     def close_image(self):
@@ -622,3 +637,4 @@ class ImageApp(tk.Tk):
                 self.canvas.xview_scroll(-1 if linux_up else 1, "units")
             else:
                 self.canvas.yview_scroll(-1 if linux_up else 1, "units")
+

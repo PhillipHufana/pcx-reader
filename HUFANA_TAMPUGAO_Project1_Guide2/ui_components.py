@@ -64,7 +64,21 @@ class ScrollableFrame(ttk.Frame):
         self._bind_mousewheel()
 
     def _bind_mousewheel(self):
+    # Redirect mousewheel only while cursor is over the panel
+        self.inner.bind("<Enter>", self._on_enter)
+        self.inner.bind("<Leave>", self._on_leave)
+        self.canvas.bind("<Enter>", self._on_enter)
+        self.canvas.bind("<Leave>", self._on_leave)
+
+    def _on_enter(self, event=None):
+        # When mouse enters, bind to THIS widget
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_leave(self, event=None):
+        # When mouse leaves, unbind so others can take over
+        self.canvas.unbind_all("<MouseWheel>")
+
+
 
     def _on_inner_configure(self, event=None):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -310,6 +324,10 @@ class ImageCanvas(tk.Canvas):
     def __init__(self, master, controller, bg="#111", **kwargs):
         super().__init__(master, bg=bg, highlightthickness=0, cursor="crosshair", **kwargs)
         self.controller = controller
+
+        # Set initial visible size for main image area
+        self.config(width=800, height=350)
+
 
         # scrollbars remain children of the canvas's master (matching earlier layout)
         self.hbar = ttk.Scrollbar(master, orient="horizontal", command=self.xview)
