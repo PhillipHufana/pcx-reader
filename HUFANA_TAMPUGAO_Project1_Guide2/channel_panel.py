@@ -5,6 +5,7 @@ from PIL import Image, ImageTk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
+from point_processing_panel import PointProcessingPanel
 
 def split_channels(img):
     """Return individual R, G, B images."""
@@ -53,10 +54,14 @@ class ChannelPanel(ttk.Frame):
         self.tabs.pack(fill="both", expand=True)
         self.frames = {}
 
-        for name in ["Channels", "Histograms", "Grayscale"]:
+        for name in ["Channels", "Histograms", "Grayscale", "Point Processing"]:
             f = ttk.Frame(self.tabs)
             self.tabs.add(f, text=name)  # Add each tab to the notebook
             self.frames[name] = f  # Store frame reference for later use
+        
+        # Initialize point processing panel inside its tab
+        self.point_panel = PointProcessingPanel(self.frames["Point Processing"], controller=self.controller)
+        self.point_panel.pack(fill="both", expand=True)
 
     def show_channels(self, img):
         # Clear any previous content in the "Channels" tab
