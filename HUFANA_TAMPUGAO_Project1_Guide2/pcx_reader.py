@@ -1,3 +1,4 @@
+#pcx_reader.py
 import struct
 import os
 import colorsys

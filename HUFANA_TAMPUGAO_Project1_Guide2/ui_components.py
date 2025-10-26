@@ -1,3 +1,4 @@
+# ui_components.py
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
@@ -173,10 +174,7 @@ class SidePanel(ttk.Frame):
         self.preview_canvas.create_rectangle(0, 0, pw, ph, fill="#1b1b1b", outline="#444")
         self.preview_canvas.create_text(pw // 2, ph // 2, text="No Preview", fill="#999", font=("Segoe UI", 10))
 
-    def set_preview_image_from_pil(self, pil_image, allow_upscale=False):
-        """
-        Always display a scaled preview of pil_image. If pil_image is None, show placeholder.
-        """
+    def set_preview_image_from_pil(self, pil_image, allow_upscale=True):
         if pil_image is None:
             self._preview_photo_ref = None
             self._draw_preview_placeholder()
@@ -186,20 +184,23 @@ class SidePanel(ttk.Frame):
         iw, ih = pil_image.size
 
         scale = min(pw / iw, ph / ih)
+        # remove restriction on upscaling
         if scale > 1.0 and not (allow_upscale or getattr(self.controller, "allow_upscale", False)):
-            scale = 1.0
+            scale = 1.0  # this line will no longer trigger unless explicitly passed False
 
         new_w = max(1, int(iw * scale))
         new_h = max(1, int(ih * scale))
         resized = pil_image.resize((new_w, new_h), Image.LANCZOS)
         photo = ImageTk.PhotoImage(resized)
         self._preview_photo_ref = photo
+
         self.preview_canvas.delete("all")
         self.preview_canvas.create_rectangle(0, 0, pw, ph, fill="#1b1b1b", outline="#444")
         cx = (pw - new_w) // 2
         cy = (ph - new_h) // 2
         self.preview_canvas.create_image(cx, cy, anchor="nw", image=photo)
         self.scroll_frame._on_inner_configure()
+
 
     def update_pcx_info(self, header_data):
         if header_data and "Error" not in header_data:

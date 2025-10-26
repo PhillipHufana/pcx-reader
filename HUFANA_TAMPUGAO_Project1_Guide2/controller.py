@@ -1,27 +1,32 @@
+
+# controller.py
 import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageOps
+import cv2
+import numpy as np
 
 from model import ImageState
 from utils import rgb_to_hex, rgb_to_hsv_str
 from ui_components import Toolbar, SidePanel, ImageCanvas
-from pcx_reader import read_pcx_header, read_pcx_256_palette  # New import
+from pcx_reader import read_pcx_header, read_pcx_256_palette
 from channel_panel import ChannelPanel
+
+
+
 try:
     RESAMPLE = Image.Resampling.LANCZOS
 except AttributeError:
     RESAMPLE = Image.LANCZOS
 
 
-# ---------------------- Controller (Main App) ----------------------
 class ImageApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.img_state = ImageState()
         self.title("CMSC 162 - Image Viewer")
 
-        # Try to maximize window
         try:
             if sys.platform.startswith("win"):
                 self.state("zoomed")
@@ -33,44 +38,34 @@ class ImageApp(tk.Tk):
         except Exception:
             pass
 
-
-        # --- Layout ---
         toolbar = Toolbar(self, self)
         toolbar.pack(side="top", fill="x", padx=8, pady=6)
         self.toolbar = toolbar
 
-        # Create horizontal frame for image + sidebar
         hframe = ttk.Frame(self)
         hframe.pack(side="top", fill="both", expand=True)
 
-        # --- Left area: image + bottom histograms ---
         vsplit = tk.PanedWindow(hframe, orient="vertical")
         vsplit.pack(side="left", fill="both", expand=True)
 
-        # Top image area
         top_area = ttk.Frame(vsplit)
         self.canvas = ImageCanvas(top_area, self)
         vsplit.add(top_area, minsize=200)
 
-        # Bottom histogram/channel panel
         self.channel_panel = ChannelPanel(vsplit, self)
         vsplit.add(self.channel_panel, minsize=200)
+        
 
-        # --- Right side panel (metadata, preview, etc.) ---
         self.side_panel = SidePanel(hframe, self)
         self.side_panel.pack(side="right", fill="y", padx=(4, 8), pady=8)
 
-
-        # --- Status bar ---
         self.status = ttk.Label(self, text="Load an image to get started.")
         self.status.pack(side="bottom", fill="x")
 
-        # Init key bindings
         self._init_bindings()
 
     # ------------------ Public Commands ------------------
 
-    # open image file
     def open_image(self):
         path = filedialog.askopenfilename(
             filetypes=[
@@ -81,7 +76,6 @@ class ImageApp(tk.Tk):
         if not path:
             return
 
-        # Reset file / PCX state before loading a new image
         self.img_state.pcx_header = None
         self.img_state.pcx_palette = None
         self.img_state.file_path = None
@@ -89,90 +83,88 @@ class ImageApp(tk.Tk):
         self.img_state.jpeg_exif = None
         self.side_panel.update_pcx_info(None)
 
-        # Open image once to capture format & EXIF, then convert to RGB for display
         try:
             im0 = Image.open(path)
-            # store basic file info
             self.img_state.file_path = path
-            # PIL's .format may be None for some in-memory images; for files it's usually set
             self.img_state.file_format = im0.format
-
-            # Try to extract EXIF for JPEGs (defensive)
-            self.img_state.jpeg_exif = None
-            try:
-                if (self.img_state.file_format or "").upper() == "JPEG":
-                    exif = im0.getexif()
-                    if exif:
-                        # map numeric tags to human-readable names
-                        from PIL import ExifTags
-                        tagmap = {ExifTags.TAGS.get(k, k): v for k, v in exif.items()}
-                        self.img_state.jpeg_exif = tagmap
-            except Exception:
-                # keep jpeg_exif as None if extraction fails
-                self.img_state.jpeg_exif = None
-
-            # Convert to RGB for consistent display / eyedropper behavior
             img = im0.convert("RGB")
-
         except Exception as e:
             messagebox.showerror("Open Image", f"Failed to open image:\n{e}")
             return
 
-        # --- PCX Specific Header & Palette Reading ---
         if path.lower().endswith('.pcx'):
-            print(f"DEBUG: Reading PCX file: {path}")
-
-            # Read and store header
             header_data = read_pcx_header(path)
             self.img_state.pcx_header = header_data
-
-            # Read and store palette 
             palette_data = read_pcx_256_palette(path)
             self.img_state.pcx_palette = palette_data
-
-            print(f"DEBUG: PCX Header Result: {header_data.get('Error', 'Success') if header_data else 'No Header'}")
-            print(f"DEBUG: PCX Palette Found: {self.img_state.pcx_palette is not None}")
-
-            # Update side panel with PCX header/palette availability
             self.side_panel.update_pcx_info(self.img_state.pcx_header)
-
-            # Show the inline palette automatically if a palette is present
             if self.img_state.pcx_palette:
-                
-                try:
-                    self.after(10, self.show_palette)
-                except Exception:
-                    self.show_palette()
+                self.after(10, self.show_palette)
         else:
-            # Clear any previous PCX info if a non-PCX file is loaded
             self.side_panel.update_pcx_info(None)
 
-        # Finalize state + UI updates
+        # Store original image for reset
+        self.img_state.original_img = img.copy()
         self.img_state.img = img
-        # also keep PIL image stored so ImageCanvas.set_image_from_pil can use it
+        self.current_image = img  # for backward compatibility
         self.img_state.tk_img = None
         self.title(f"CMSC 162 - {path}")
         self.img_state.fit_to_window = True
         self.img_state.scale = 1.0
 
-        # Ensure the main canvas gets the image and side-preview updates immediately
-        try:
-            self.canvas.set_image_from_pil(self.img_state.img)
-        except Exception:
-          
-            pass
-
+        # Update UI
+        self.canvas.set_image_from_pil(self.img_state.img)
         self.update_preview()
-        self.update_meta()  # Updates general metadata (size, mode, format, EXIF)
+        self.update_meta()
         self.redraw()
-
         self.channel_panel.show_channels(img)
-
+        self.side_panel.enable_threshold_slider(True)
         self.status.config(text=f"Loaded: {path}")
 
+    # ------------------ Point Processing ------------------
+    def point_processing(self):
+        """Convert current loaded image to grayscale (no re-upload)."""
+        if not self.img_state.img:
+            messagebox.showwarning("No Image", "Please open an image first.")
+            return
+
+        gray_img = ImageOps.grayscale(self.img_state.img).convert("RGB")
+        self.img_state.img = gray_img
+
+        self.canvas.set_image_from_pil(self.img_state.img)
+        self.update_preview()
+        self.channel_panel.show_channels(self.img_state.img)
+        self.status.config(text="Applied grayscale point processing.")
+
+    # ------------------ Reset Image ------------------
+    def reset_image(self):
+        """Restore original image."""
+        if not self.img_state.original_img:
+            messagebox.showwarning("No Image", "No image to reset.")
+            return
+
+        self.img_state.img = self.img_state.original_img.copy()
+        self.canvas.set_image_from_pil(self.img_state.img)
+        self.update_preview()
+        self.channel_panel.show_channels(self.img_state.img)
+        self.status.config(text="Image reset to original.")
+
+    # ------------------ Threshold ------------------
+    def update_threshold(self, val):
+        """Apply live threshold from SidePanel slider."""
+        if not self.img_state.img:
+            return
+
+        img_gray = np.array(self.img_state.img.convert("L"))
+        t = int(float(val))
+        _, binary = cv2.threshold(img_gray, t, 255, cv2.THRESH_BINARY)
+        img_tk = Image.fromarray(binary)
+        self.canvas.set_image_from_pil(img_tk)
+        self.update_preview()
+        self.status.config(text=f"Threshold applied (level={t})")
+        
     def close_image(self):
-        """Close current image and clear image + metadata state."""
-        # Clear display image state
+        # Clear main image state
         self.img_state.img = None
         self.img_state.tk_img = None
         self.img_state.img_item = None
@@ -182,57 +174,72 @@ class ImageApp(tk.Tk):
         self.img_state.scale = 1.0
         self.img_state.fit_to_window = True
 
-        # Clear file & pcx metadata
+        # Clear original / point-processed image
+        self.img_state.original_img = None
+        self.img_state.point_processed_img = None
+
+        # Clear PCX / metadata
         self.img_state.pcx_header = None
         self.img_state.pcx_palette = None
         self.img_state.file_path = None
         self.img_state.file_format = None
         self.img_state.jpeg_exif = None
 
-        # Clear canvas and scrollregion
+        # Clear main canvas
         try:
             self.canvas.delete("all")
             self.canvas.configure(scrollregion=(0, 0, 0, 0))
         except Exception:
             pass
 
-        # Always clear inline palette 
+        # Clear palette
         try:
             if hasattr(self.side_panel, "palette_canvas"):
                 self.side_panel.palette_canvas.delete("all")
             if hasattr(self.side_panel, "palette_hint"):
                 self.side_panel.palette_hint.config(text="")
-            # hide palette frame if visible
-            try:
-                self.side_panel.palette_preview_frame.grid_forget()
-                self.side_panel.palette_visible = False
-                self.side_panel.palette_button.config(text="No Color Palette Found", state="disabled")
-            except Exception:
-                pass
+            self.side_panel.palette_preview_frame.grid_forget()
+            self.side_panel.palette_visible = False
+            self.side_panel.palette_button.config(text="No Color Palette Found", state="disabled")
         except Exception:
             pass
 
-        # Reset preview & metadata panel
+        # Clear preview + metadata + threshold slider
         try:
-            # new SidePanel API
             self.side_panel.set_preview_image_from_pil(None)
-        except Exception:
-            pass
-        try:
             self.side_panel.set_metadata_text("No image loaded.")
             self.side_panel.update_pcx_info(None)
+            self.side_panel.enable_threshold_slider(False)
         except Exception:
             pass
 
-        # Reset toolbar/status
+        # Clear zoom label
         try:
             self.toolbar.zoom_label.config(text="")
         except Exception:
             pass
+
+        # 🧩 Synchronize Channel, Histogram, Grayscale, Point Processing tabs
+        try:
+            if hasattr(self, "channel_panel"):
+                self.channel_panel.show_channels(None)
+        except Exception as e:
+            print("Warning: Failed to reset channel panel:", e)
+        
+        # 🧩 Synchronize Image Enhancement tab
+        try:
+            if hasattr(self, "enhancement_panel"):
+                self.enhancement_panel.clear_filters()
+        except Exception as e:
+            print("Warning: Failed to reset enhancement panel:", e)
+
+        # Update status bar
         self.status.config(text="Closed image.")
 
+
+
+    # ------------------ Show Palette ------------------
     def show_palette(self):
-        # Guard
         if not self.img_state.pcx_palette:
             messagebox.showinfo("Palette", "The loaded image does not have an external 256-color PCX palette.")
             return
@@ -240,17 +247,14 @@ class ImageApp(tk.Tk):
         canvas = self.side_panel.palette_canvas
         canvas.delete("all")
 
-        # Layout parameters
         cols = 16
         rows = 16
-        # use the canvas width; fallback if 0
         pw = canvas.winfo_width() or int(canvas['width']) or 240
         pad = 2
-        sw = max(6, (pw - pad * (cols + 1)) // cols)  # swatch size (min 6 px)
+        sw = max(6, (pw - pad * (cols + 1)) // cols)
         needed_h = pad + rows * (sw + pad)
         canvas.config(height=needed_h)
 
-        # Draw swatches and bind each tag to click
         for i, (r, g, b) in enumerate(self.img_state.pcx_palette[:256]):
             row = i // cols
             col = i % cols
@@ -258,16 +262,13 @@ class ImageApp(tk.Tk):
             y = pad + row * (sw + pad)
             hex_color = rgb_to_hex(r, g, b)
             tag = f"sw{i}"
-            # create rectangle and give it a unique tag
             canvas.create_rectangle(x, y, x + sw, y + sw, fill=hex_color, outline="#000", tags=(tag,))
-            # bind click on tag to handler (capture index via default arg)
             canvas.tag_bind(tag, "<Button-1>", lambda e, idx=i: self._palette_clicked(idx))
 
         try:
             self.side_panel.palette_preview_frame.grid(row=8, column=0, sticky="we", padx=8, pady=(0, 10))
             self.side_panel.palette_visible = True
             self.side_panel.palette_button.config(text="Hide PCX Color Palette", state="normal")
-            # update side layout
             try:
                 self.side_panel.scroll_frame._on_inner_configure()
             except Exception:
