@@ -1,129 +1,210 @@
+# point_processing_panel.py
 import tkinter as tk
-from tkinter import ttk
-from PIL import Image, ImageTk
+from tkinter import ttk, messagebox
+from PIL import Image, ImageTk, ImageOps
 import numpy as np
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 class PointProcessingPanel(ttk.Frame):
-    def __init__(self, master, controller=None):
+    """
+    Integrated Point Processing Panel for main controller:
+    - Grayscale
+    - Negative
+    - Histogram Equalization
+    - Threshold (slider inside UI)
+    - Gamma Correction (slider inside UI)
+    - Reset
+    """
+
+    def __init__(self, master, controller):
         super().__init__(master)
-        self.controller = controller
-        self.img = None  # Will hold the input image
-        self._build_ui()
+        self.controller = controller  # reference to main controller
+        self.pack(fill="both", expand=True, padx=10, pady=10)
 
-    def _build_ui(self):
-        """Build layout with controls on the left and output area on the right."""
-        # Main layout: controls | preview
-        main_frame = ttk.Frame(self)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        # ---------- HEADER ----------
+        ttk.Label(
+            self,
+            text="🎨 Point Processing Methods",
+            font=("Arial", 16, "bold"),
+            foreground="#2B547E"
+        ).pack(pady=10)
 
-        left_frame = ttk.Frame(main_frame)
-        left_frame.pack(side="left", fill="y", padx=10, pady=5)
+        # ---------- BUTTON FRAME ----------
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=10)
 
-        right_frame = ttk.Frame(main_frame)
-        right_frame.pack(side="right", fill="both", expand=True, padx=10, pady=5)
+        ttk.Button(btn_frame, text="Grayscale", command=self.apply_grayscale).grid(row=0, column=0, padx=5, pady=5)
+        ttk.Button(btn_frame, text="Negative", command=self.apply_negative).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Button(btn_frame, text="Histogram Equalization", command=self.apply_hist_eq).grid(row=0, column=2, padx=5, pady=5)
+        ttk.Button(btn_frame, text="Reset", command=self.reset_image).grid(row=0, column=3, padx=5, pady=5)
 
-        # === Control Buttons ===
-        ttk.Label(left_frame, text="Point Processing Methods", font=("Arial", 11, "bold")).pack(pady=5)
-
-        ttk.Button(left_frame, text="1️⃣ Grayscale", command=self.apply_grayscale).pack(fill="x", pady=3)
-        ttk.Button(left_frame, text="2️⃣ Negative", command=self.apply_negative).pack(fill="x", pady=3)
-
-        # --- Manual Threshold ---
-        ttk.Label(left_frame, text="3️⃣ Manual Thresholding").pack(pady=(10, 0))
+        # ---------- SLIDERS ----------
+        ttk.Label(self, text="Threshold (0–255)").pack(pady=(10, 0))
         self.threshold_var = tk.IntVar(value=128)
-        ttk.Scale(left_frame, from_=0, to=255, orient="horizontal", variable=self.threshold_var).pack(fill="x")
-        ttk.Button(left_frame, text="Apply Threshold", command=self.apply_threshold).pack(fill="x", pady=3)
+        self.threshold_slider = ttk.Scale(self, from_=0, to=255, orient="horizontal",
+                                          variable=self.threshold_var, command=self._apply_threshold)
+        self.threshold_slider.pack(fill="x", padx=20)
 
-        # --- Power-Law (Gamma) ---
-        ttk.Label(left_frame, text="4️⃣ Power-Law (Gamma)").pack(pady=(10, 0))
+        ttk.Label(self, text="Gamma Correction (0.1–5.0)").pack(pady=(10, 0))
         self.gamma_var = tk.DoubleVar(value=1.0)
-        ttk.Scale(left_frame, from_=0.1, to=5.0, orient="horizontal", variable=self.gamma_var, length=150).pack(fill="x")
-        ttk.Button(left_frame, text="Apply Gamma", command=self.apply_gamma).pack(fill="x", pady=3)
+        self.gamma_slider = ttk.Scale(self, from_=0.1, to=5.0, orient="horizontal",
+                                      variable=self.gamma_var, command=self._apply_gamma)
+        self.gamma_slider.pack(fill="x", padx=20)
 
-        # --- Histogram Equalization ---
-        ttk.Button(left_frame, text="5️⃣ Histogram Equalization", command=self.apply_hist_eq).pack(fill="x", pady=(10, 3))
+        # ---------- IMAGE DISPLAY ----------
+        self.image_label = ttk.Label(self)
+        self.image_label.pack(pady=10)
 
-        # --- Reset ---
-        ttk.Button(left_frame, text="🔄 Reset Image", command=self.reset_image).pack(fill="x", pady=(20, 3))
+        # ---------- INFO LABEL ----------
+        
+        self._update_display_image()
 
-        # === Output Area ===
-        self.output_label = ttk.Label(right_frame, text="Processed Image", font=("Arial", 10, "bold"))
-        self.output_label.pack(pady=5)
+    # =========================================================
+    # IMAGE HANDLING
+    # =========================================================
+    def _update_display_image(self, img=None):
+        """Display image on GUI; default to controller's current_image"""
+        if img is None:
+            img = getattr(self.controller, "current_image", None)
+        if img is None:
+            # Clear the image label
+            self.image_label.configure(image='')
+            self.image_label.image = None
+            return
+        img_copy = img.copy()
+        img_copy.thumbnail((400, 400))
+        tk_img = ImageTk.PhotoImage(img_copy)
+        self.image_label.configure(image=tk_img)
+        self.image_label.image = tk_img
+    
+    def reset_panel(self):
+        """Clear the displayed image and reset controls."""
+        try:
+            if hasattr(self, "canvas"):
+                self.canvas.delete("all")
+            if hasattr(self, "image_label"):
+                self.image_label.config(image='', text="No image loaded.")
+            if hasattr(self, "photo"):
+                self.photo = None
+            if hasattr(self, "current_image"):
+                self.current_image = None
+            if hasattr(self, "display_img"):
+                self.display_img = None
+            if hasattr(self, "info_label"):
+                self.info_label.config(text="No image loaded.")
+            # Reset sliders
+            if hasattr(self, "threshold_var"):
+                self.threshold_var.set(128)
+            if hasattr(self, "gamma_var"):
+                self.gamma_var.set(1.0)
+        except Exception as e:
+            print("Warning: reset_panel failed:", e)
 
-        self.image_canvas = tk.Label(right_frame)
-        self.image_canvas.pack(pady=5)
 
-        # Histogram figure
-        self.fig = Figure(figsize=(5, 3))
-        self.ax = self.fig.add_subplot(111)
-        self.hist_canvas = FigureCanvasTkAgg(self.fig, master=right_frame)
-        self.hist_canvas.get_tk_widget().pack(fill="both", expand=True)
+    def ensure_image_loaded(self):
+        """Check if main controller has a loaded image"""
+        if hasattr(self.controller, "current_image") and self.controller.current_image is not None:
+            return True
+        messagebox.showerror("Error", "No image found. Please load one in the main window.")
+        return False
 
-    # ---------------- IMAGE DISPLAY UTILS ----------------
-    def set_image(self, img):
-        """Set the working image (PIL)."""
-        self.original_img = img.copy()
-        self.img = img.copy()
-        self.display_image_and_histogram(img)
-
-    def display_image_and_histogram(self, img):
-        """Update preview and histogram."""
-        # Show image
-        preview = img.resize((300, 300))
-        photo = ImageTk.PhotoImage(preview)
-        self.image_canvas.configure(image=photo)
-        self.image_canvas.image = photo
-
-        # Show histogram
-        arr = np.array(img.convert("L")).flatten()
-        self.ax.clear()
-        self.ax.hist(arr, bins=256, color="gray")
-        self.ax.set_xlim(0, 255)
-        self.ax.set_title("Histogram")
-        self.ax.set_xlabel("Intensity")
-        self.ax.set_ylabel("Frequency")
-        self.hist_canvas.draw()
-
-    def reset_image(self):
-        """Restore the original image."""
-        if self.original_img is not None:
-            self.img = self.original_img.copy()
-            self.display_image_and_histogram(self.img)
-
-# ---------------- POINT PROCESSING METHODS ----------------
+    # =========================================================
+    # POINT PROCESSING METHODS
+    # =========================================================
     def apply_grayscale(self):
-        gray = self.img.convert("L")
-        self.display_image_and_histogram(gray)
+        if not self.ensure_image_loaded():
+            return
+        img = self.controller.current_image
+        gray_img = ImageOps.grayscale(img).convert("RGB")
+        self.controller.current_image = gray_img
+        self._update_display_image(gray_img)
+        self._refresh_controller()
+        self.info_label.config(text="Applied Grayscale Transformation.")
 
     def apply_negative(self):
-        arr = 255 - np.array(self.img)
-        neg = Image.fromarray(arr.astype(np.uint8))
-        self.display_image_and_histogram(neg)
-
-    def apply_threshold(self):
-        threshold = self.threshold_var.get()
-        gray = self.img.convert("L")
-        arr = np.array(gray)
-        binary = np.where(arr >= threshold, 255, 0).astype(np.uint8)
-        bw = Image.fromarray(binary, mode='L')
-        self.display_image_and_histogram(bw)
-
-    def apply_gamma(self):
-        gamma = self.gamma_var.get()
-        arr = np.array(self.img.convert("L")) / 255.0
-        gamma_corrected = np.power(arr, gamma) * 255
-        gamma_img = Image.fromarray(np.clip(gamma_corrected, 0, 255).astype(np.uint8))
-        self.display_image_and_histogram(gamma_img)
+        if not self.ensure_image_loaded():
+            return
+        img = np.array(self.controller.current_image)
+        neg = 255 - img
+        neg_img = Image.fromarray(neg.astype(np.uint8))
+        self.controller.current_image = neg_img
+        self._update_display_image(neg_img)
+        self._refresh_controller()
+        self.info_label.config(text="Applied Negative Transformation.")
 
     def apply_hist_eq(self):
-        """Manual histogram equalization (step-by-step)."""
-        gray = np.array(self.img.convert("L"))
-        hist, _ = np.histogram(gray.flatten(), bins=256, range=(0, 255))
-        pdf = hist / hist.sum()  # Step 3
-        cdf = np.cumsum(pdf)  # Step 4
-        eq_vals = np.floor(255 * cdf).astype(np.uint8)  # Step 5–6
-        equalized = eq_vals[gray]
+        if not self.ensure_image_loaded():
+            return
+        img = np.array(self.controller.current_image.convert("L"))
+        hist, _ = np.histogram(img.flatten(), bins=256, range=[0, 256])
+        pdf = hist / np.sum(hist)
+        cdf = np.cumsum(pdf)
+        equalized = np.floor(255 * cdf[img]).astype(np.uint8)
         eq_img = Image.fromarray(equalized)
-        self.display_image_and_histogram(eq_img)
+        self.controller.current_image = eq_img
+        self._update_display_image(eq_img)
+        self._refresh_controller()
+        self.info_label.config(text="Applied Histogram Equalization.")
+
+    # =========================================================
+    # SLIDER HANDLERS
+    # =========================================================
+    def _apply_threshold(self, val):
+        if not self.ensure_image_loaded():
+            return
+        try:
+            base_img = self.controller.img_state.original_img
+            if base_img is None:
+                return
+            img_gray = np.array(base_img.convert("L"))
+            thresh = int(float(val))
+            binary = np.where(img_gray > thresh, 255, 0).astype(np.uint8)
+            bw_img = Image.fromarray(binary)
+            self.controller.current_image = bw_img
+            self._update_display_image(bw_img)
+            self._refresh_controller()
+            self.info_label.config(text=f"Threshold applied: {thresh}")
+        except Exception:
+            pass
+
+    def _apply_gamma(self, val):
+        if not self.ensure_image_loaded():
+            return
+        try:
+            base_img = self.controller.img_state.original_img
+            if base_img is None:
+                return
+            img_gray = np.array(base_img.convert("L"), dtype=np.float32) / 255.0
+            gamma = float(val)
+            corrected = np.power(img_gray, gamma)
+            gamma_img = Image.fromarray((corrected * 255).astype(np.uint8))
+            self.controller.current_image = gamma_img
+            self._update_display_image(gamma_img)
+            self._refresh_controller()
+            self.info_label.config(text=f"Gamma: {gamma:.2f}")
+        except Exception:
+            pass
+
+    # =========================================================
+    # RESET
+    # =========================================================
+    def reset_image(self):
+        if hasattr(self.controller.img_state, "original_img") and self.controller.img_state.original_img:
+            self.controller.current_image = self.controller.img_state.original_img.copy()
+            self.threshold_var.set(128)
+            self.gamma_var.set(1.0)
+            self._update_display_image(self.controller.current_image)
+            self._refresh_controller()
+            self.info_label.config(text="Image reset to original.")
+        else:
+            self.info_label.config(text="No original image to reset.")
+
+    # =========================================================
+    # REFRESH MAIN CONTROLLER
+    # =========================================================
+    def _refresh_controller(self):
+        try:
+            self.controller.update_preview()
+            self.controller.channel_panel.show_channels(self.controller.current_image)
+            self.controller.redraw()
+        except Exception:
+            pass

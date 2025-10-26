@@ -2,7 +2,7 @@
 from controller import ImageApp
 
 def main():
-    app = ImageApp()
+    app = ImageApp()   # ✅ no argument
     app.mainloop()
 
 if __name__ == "__main__":
