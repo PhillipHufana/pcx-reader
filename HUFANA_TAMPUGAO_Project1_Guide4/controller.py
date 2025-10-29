@@ -62,7 +62,7 @@ class ImageApp(tk.Tk):
 
         self._init_bindings()
 
-    #  Public Commands 
+    # Public Commands
 
     def open_image(self):
         path = filedialog.askopenfilename(
@@ -119,7 +119,7 @@ class ImageApp(tk.Tk):
         self.side_panel.enable_threshold_slider(True)
         self.status.config(text=f"Loaded: {path}")
 
-    #  Point Processing 
+    # Point Processing
     def point_processing(self):
         """Convert current loaded image to grayscale (no re-upload)."""
         if not self.img_state.img:
@@ -134,7 +134,7 @@ class ImageApp(tk.Tk):
         self.channel_panel.show_channels(self.img_state.img)
         self.status.config(text="Applied grayscale point processing.")
 
-    #  Reset Image 
+    # Reset Image
     def reset_image(self):
         """Restore original image."""
         if not self.img_state.original_img:
@@ -147,7 +147,7 @@ class ImageApp(tk.Tk):
         self.channel_panel.show_channels(self.img_state.img)
         self.status.config(text="Image reset to original.")
 
-    #  Threshold 
+    # Threshold
     def update_threshold(self, val):
         """Apply live threshold from SidePanel slider."""
         if not self.img_state.img:
@@ -236,7 +236,7 @@ class ImageApp(tk.Tk):
 
 
 
-    #  Show Palette 
+    # Show Palette
     def show_palette(self):
         if not self.img_state.pcx_palette:
             messagebox.showinfo("Palette", "The loaded image does not have an external 256-color PCX palette.")
@@ -410,7 +410,7 @@ class ImageApp(tk.Tk):
             self.clipboard_append(txt)
             self.status.config(text=f"Copied {txt} to clipboard")
 
-    #  Rendering 
+    # Rendering
 
     # redraw the canvas
     def redraw(self):
@@ -459,7 +459,7 @@ class ImageApp(tk.Tk):
             pass
         self.status.config(text=f"Image: {iw}×{ih}px  |  Display: {dw}×{dh}px")
 
-    #  Interaction 
+    # Interaction
 
     # controller hook called by ImageCanvas when a click happens on the main image.
     # Returns True when the controller handles the click (so ImageCanvas won't fallback).
@@ -534,7 +534,7 @@ class ImageApp(tk.Tk):
         except Exception:
             pass
 
-    #  Bindings 
+    # Bindings
 
     # initialize key and mouse bindings
     def _init_bindings(self):

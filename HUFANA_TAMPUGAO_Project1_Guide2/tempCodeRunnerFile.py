@@ -1,4 +1,3 @@
-# main.py
 from controller import ImageApp
 
 def main():

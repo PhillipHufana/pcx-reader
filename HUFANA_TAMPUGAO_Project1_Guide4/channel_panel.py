@@ -81,7 +81,7 @@ class ChannelPanel(ttk.Frame):
 
             return
 
-        #  Normal display when an image is loaded 
+        # Normal display when an image is loaded
         for child in self.frames["Channels"].winfo_children():
             child.destroy()
 
