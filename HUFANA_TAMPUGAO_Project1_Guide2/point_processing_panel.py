@@ -33,7 +33,7 @@ class PointProcessingPanel(ttk.Frame):
 
         ttk.Button(btn_frame, text="Grayscale", command=self.apply_grayscale).grid(row=0, column=0, padx=5, pady=5)
         ttk.Button(btn_frame, text="Negative", command=self.apply_negative).grid(row=0, column=1, padx=5, pady=5)
-        ttk.Button(btn_frame, text="Histogram Equalizaaation", command=self.apply_hist_eq).grid(row=0, column=2, padx=5, pady=5)
+        ttk.Button(btn_frame, text="Histogram Equalization", command=self.apply_hist_eq).grid(row=0, column=2, padx=5, pady=5)
         ttk.Button(btn_frame, text="Reset", command=self.reset_image).grid(row=0, column=3, padx=5, pady=5)
 
         #- SLIDERS-
