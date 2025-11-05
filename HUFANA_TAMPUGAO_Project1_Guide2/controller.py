@@ -22,6 +22,67 @@ except AttributeError:
 class ImageApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        from tkinter import ttk
+
+        self.configure(bg="white")
+
+        style = ttk.Style(self)
+        style.theme_use("clam")  # reliable and customizable base theme
+
+        # Global defaults
+        self.option_add("*Font", ("Segoe UI", 10))
+        self.option_add("*Background", "white")
+        self.option_add("*Foreground", "#202020")
+
+        # Frame and label styling
+        style.configure("TFrame", background="white")
+        style.configure("TLabel", background="white", foreground="#202020")
+
+        # Button styling
+        style.configure(
+            "TButton",
+            font=("Segoe UI", 10, "bold"),
+            background="#f5f5f5",
+            foreground="#202020",
+            borderwidth=1,
+            padding=6
+        )
+
+        style.map(
+            "TButton",
+            background=[("active", "#e0e0e0"), ("pressed", "#d0d0d0")],
+            relief=[("pressed", "sunken"), ("!pressed", "raised")]
+        )
+
+        # Notebook (tab control)
+        style.configure("TNotebook", background="white", borderwidth=0)
+        style.configure("TNotebook.Tab", background="#f8f8f8", foreground="#202020", padding=[8, 4])
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", "#ffffff"), ("active", "#f0f0f0")],
+            expand=[("selected", [1, 1, 1, 0])]
+        )
+
+        # Entry (if any input fields are used)
+        style.configure("TEntry", fieldbackground="white", foreground="#202020")
+
+        # Scales, sliders, etc.
+        style.configure("TScale", background="white")
+        style.configure("Horizontal.TScale", troughcolor="#e5e5e5")
+
+        # Status bar
+        style.configure("TLabelFrame", background="white", foreground="#202020")
+
+        # Active color tweaks
+        style.map(
+            "TFrame",
+            background=[("active", "white")]
+        )
+
+        self.option_add("*TButton.padding", 4)
+        self.option_add("*TLabel.padding", 2)
+        self.option_add("*TFrame.padding", 2)
+
         self.img_state = ImageState()
         self.title("CMSC 162 - Image Viewer")
 

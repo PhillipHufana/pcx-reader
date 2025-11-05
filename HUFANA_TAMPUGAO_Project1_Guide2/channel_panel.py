@@ -135,8 +135,17 @@ class ChannelPanel(ttk.Frame):
             frame = ttk.Frame(sub_tabs)
             sub_tabs.add(frame, text=tab_name)
 
-            fig = Figure(figsize=(5, 3))
+            fig = Figure(figsize=(2, 1))
             ax = fig.add_subplot(111)
+
+            fig.patch.set_facecolor('white')
+            ax.set_facecolor('white')
+            ax.tick_params(colors='#202020')
+            ax.xaxis.label.set_color('#202020')
+            ax.yaxis.label.set_color('#202020')
+            ax.title.set_color('#202020')
+            fig.tight_layout(pad=1.0)
+
 
             for ch_name, ch_img, color in channels:
                 hist = compute_histogram(ch_img)
@@ -176,7 +185,7 @@ class ChannelPanel(ttk.Frame):
         img_label.pack(pady=5)
 
         hist = compute_histogram(gray)
-        fig = Figure(figsize=(5, 3))
+        fig = Figure(figsize=(2, 1))
         ax = fig.add_subplot(111)
         ax.plot(hist, color='black')
         ax.set_title("Grayscale Histogram")

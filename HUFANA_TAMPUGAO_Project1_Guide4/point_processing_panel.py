@@ -33,7 +33,7 @@ class PointProcessingPanel(ttk.Frame):
 
         ttk.Button(btn_frame, text="Grayscale", command=self.apply_grayscale).grid(row=0, column=0, padx=5, pady=5)
         ttk.Button(btn_frame, text="Negative", command=self.apply_negative).grid(row=0, column=1, padx=5, pady=5)
-        ttk.Button(btn_frame, text="Histogram Equalizaaation", command=self.apply_hist_eq).grid(row=0, column=2, padx=5, pady=5)
+        ttk.Button(btn_frame, text="Histogram Equalization", command=self.apply_hist_eq).grid(row=0, column=2, padx=5, pady=5)
         ttk.Button(btn_frame, text="Reset", command=self.reset_image).grid(row=0, column=3, padx=5, pady=5)
 
         #- SLIDERS-
@@ -49,16 +49,16 @@ class PointProcessingPanel(ttk.Frame):
                                       variable=self.gamma_var, command=self._apply_gamma)
         self.gamma_slider.pack(fill="x", padx=20)
 
-        # IMAGE DISPLAY
+        #  IMAGE DISPLAY 
         self.image_label = ttk.Label(self)
         self.image_label.pack(pady=10)
 
-        # HISTOGRAM FRAME
+        #  HISTOGRAM FRAME 
         # This frame will hold the histogram plots under the image
         self.hist_frame = ttk.Frame(self)
         self.hist_frame.pack(fill="both", expand=True, pady=(5, 10))
 
-        # INFO LABEL
+        #  INFO LABEL 
         self.info_label = ttk.Label(self, text="", font=("Arial", 10))
         self.info_label.pack(pady=(5, 10))
 
@@ -145,32 +145,32 @@ class PointProcessingPanel(ttk.Frame):
         import numpy as np
         from PIL import Image
 
-        # Convert to grayscale array
+        #  Convert to grayscale array 
         img = np.array(self.controller.current_image.convert("L"))
 
-        # Compute original histogram manually
+        #  Compute original histogram manually 
         hist, _ = np.histogram(img.flatten(), bins=256, range=[0, 256])
 
-        #Compute PDF, CDF, and equalize manually
+        # Compute PDF, CDF, and equalize manually 
         pdf = hist / np.sum(hist)
         cdf = np.cumsum(pdf)
         equalized = np.floor(255 * cdf[img]).astype(np.uint8)
         eq_img = Image.fromarray(equalized)
 
-        #Compute histogram after equalization
+        #  Compute histogram after equalization 
         hist_eq, _ = np.histogram(equalized.flatten(), bins=256, range=[0, 256])
 
-        # Update GUI image
+        #  Update GUI image 
         self.controller.current_image = eq_img
         self._update_display_image(eq_img)
         self._refresh_controller()
         self.info_label.config(text="Applied Histogram Equalization (with histograms below).")
 
-        # Clear old histograms from frame
+        #  Clear old histograms from frame 
         for widget in self.hist_frame.winfo_children():
             widget.destroy()
 
-        #Create a matplotlib Figure
+        # Create a matplotlib Figure 
         fig = Figure(figsize=(6, 2.5))
         axs = fig.subplots(1, 2)
 
@@ -188,12 +188,12 @@ class PointProcessingPanel(ttk.Frame):
 
         fig.tight_layout()
 
-        # Embed the figure under the image
+        #Embed the figure under the image 
         canvas = FigureCanvasTkAgg(fig, master=self.hist_frame)
         canvas.draw()
         widget = canvas.get_tk_widget()
         widget.pack(pady=5)
-        widget.update_idletasks()  # force Tkinter to refresh layout immediately
+        widget.update_idletasks()  
 
 
     # SLIDER HANDLERS
